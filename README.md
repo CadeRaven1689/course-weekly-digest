@@ -1,32 +1,32 @@
 # Send a weekly course deadline digest
 
-An editor publishes the week's lessons, learners get the deadlines that matter to them, and the educator gets a count of the people and tasks involved. The service takes a course snapshot, filters unpublished lessons and deadlines outside the seven-day window, then sends learner and educator emails through SMTP. Infrai holds the weekly schedule with one key and a plain REST call; the content decision stays in this small TypeScript service.
+I built this to push a weekly deadline digest without standing up a bunch of infra. An editor drops in the week's lessons, learners receive only the deadlines relevant to them, and the educator gets a headcount of folks and tasks. The service ingests a course snapshot, drops unpublished lessons and anything outside the seven-day window, then fires learner and educator emails over SMTP. Infrai holds the weekly schedule with one key and a plain REST call, so the content logic stays in this little TypeScript service where we can iterate fast.
 
 ## Run the editorial preview
 
-Use Node 22 or newer. Install dependencies with `npm install`, then run `npm test` and `npm run typecheck`. The focused test feeds one published Editing lab due on Wednesday, an unpublished draft, and a course due the following Monday. Expect one learner delivery and an educator report with one learner and one deadline.
+Grab Node 22+. Install deps with `npm install`, then run `npm test` and `npm run typecheck`. The focused test seeds one published Editing lab due Wednesday, an unpublished draft, and a course due the next Monday. You should see one learner email and an educator report listing one learner and one deadline.
 
-Update `data/weekly-courses.json` with your own educator address, learner addresses and course delivery dates. `weekStart` is an ISO timestamp at the beginning of the reporting week; `deadline` values use the same format. A course is included only when `published` is true and its deadline falls on or after `weekStart` but before the next week begins. Refresh this snapshot before each scheduled run from your course publishing system.
+Wire up `data/weekly-courses.json` with your educator address, learner addresses, and course dates. `weekStart` is an ISO timestamp marking the week start; `deadline` entries share that format. A course passes the filter only when `published` is true and its deadline is on or after `weekStart` but before the following week. Pull a fresh snapshot from your course system before each run, just like you'd refresh an eval set.
 
-Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` for your mail relay, then run `npm start`. The server listens on `PORT` (default 3000). To submit a snapshot directly instead of loading the file, POST the same JSON shape to `/digest`:
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` for your SMTP relay, then start `npm start`. It listens on `PORT` (default 3000). If you'd rather POST the snapshot than load the file, send the same JSON to `/digest`:
 
 ```bash
 curl -X POST http://localhost:3000/digest -H 'Content-Type: application/json' --data-binary @data/weekly-courses.json
 ```
 
-For the sample input, the JSON response is `{"to":"teacher@example.org","learnersWithDeadlines":1,"deadlines":1}`; the learner receives the Editing lab date and the educator receives the count. Use test addresses and your mail relay while rehearsing.
+With the sample input, the JSON response is `{"to":"teacher@example.org","learnersWithDeadlines":1,"deadlines":1}`; the learner gets the Editing lab date and the educator gets the count. Rehearse with test addresses and a staging relay before any real send.
 
 ## Move the weekly trigger
 
-Expose `POST /digest` at a public HTTPS URL and set `DIGEST_URL` to that full URL. Infrai calls this URL on the registered schedule; an empty request body loads `DIGEST_INPUT_FILE` (default `data/weekly-courses.json`). Keep the snapshot current in the running service. Set `INFRAI_API_KEY` from your account and choose a stable `DIGEST_SCHEDULE_KEY` for this registration, then run `npm run schedule`. The command prints the returned job ID. The schedule uses `0 9 * * 1`; align the snapshot's `weekStart` and hosting timezone with the week you publish.
+Expose `POST /digest` at a public HTTPS URL and point `DIGEST_URL` at it. Infrai hits that URL on the schedule you register; an empty body makes it load `DIGEST_INPUT_FILE` (default `data/weekly-courses.json`). Keep the snapshot fresh in the running service so you're not emailing stale data. Set `INFRAI_API_KEY` from your account and pick a stable `DIGEST_SCHEDULE_KEY` for the registration, then run `npm run schedule`. It prints the job ID. The cron spec is `0 9 * * 1`; line up the snapshot's `weekStart` and your hosting timezone with the publish week.
 
-Cutover checklist: verify the new HTTPS route with a test snapshot and mail relay; refresh the live snapshot; register the job and record its job ID; then disable the corresponding cron/Inngest schedule so only one scheduler sends the digest. For rollback, pause the new job using `POST /v1/cron/pause/{id}` with that recorded ID, then re-enable the previous schedule. Keep the previous worker and its configuration until the first weekly send is verified.
+Cutover checklist: check the new HTTPS route with a test snapshot and mail relay; refresh the live snapshot; register the job and save its ID; then turn off the old cron/Inngest schedule so only one scheduler fires. To roll back, pause the new job via `POST /v1/cron/pause/{id}` using that ID, and switch the old schedule back on. Leave the previous worker and config in place until the first weekly send is confirmed.
 
-The one real gotcha is the snapshot boundary: the scheduler triggers the route, but it does not supply your course roster. Ship a fresh snapshot to the service before Monday's run. The sample file is a local rehearsal, not live learner data.
+The gotcha I hit: the scheduler triggers the route but never sends your course roster. Push a fresh snapshot before Monday's run. The sample file is a local rehearsal, not production learner data.
 
 ## Production notes: Course Weekly Digest
 
-That's the minimal version. Before running this for real: The details below apply to Course Weekly Digest.
+That's the minimal slice. Before you point this at real learners, read the specifics for Course Weekly Digest.
 
 **Account & key**
 
